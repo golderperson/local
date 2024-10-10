@@ -9,7 +9,22 @@ Interface = "eth0"
 IPv4 = 0x0800
 IPv6 = 0x86dd
 ARP  = 0x806
+TCP=6
 host = socket.gethostbyname(socket.gethostname())
+
+class TcpHeadr(ctypes.BigEndianStructure):
+#class TcpHeadr(ctypes.Structure):
+    _fields_ = (
+        ("s_port", ctypes.c_uint16),
+        ("d_port", ctypes.c_uint16),
+        ("seq", ctypes.c_uint32),
+        ("ack", ctypes.c_uint32),
+        ("drc", ctypes.c_uint16),
+        ("win", ctypes.c_uint16),
+        ("chck", ctypes.c_uint16),
+        ("ptr", ctypes.c_uint16),
+        ("data", ctypes.c_uint8*1472)
+    )
 
 class EtherNetFrame(ctypes.BigEndianStructure):
     _fields_ = (
@@ -20,6 +35,21 @@ class EtherNetFrame(ctypes.BigEndianStructure):
         ("type", ctypes.c_uint16),
         ("payload", ctypes.c_uint8*1500)
     )
+
+class Ipv4Headr(ctypes.BigEndianStructure):
+    _fields_ = (
+        ("vit", ctypes.c_uint16),
+        ("lenth", ctypes.c_uint16),
+        ("id", ctypes.c_uint16),
+        ("flag", ctypes.c_uint16),
+        ("ttlp", ctypes.c_uint8),
+        ("type", ctypes.c_uint8),
+        ("chksm", ctypes.c_uint16),
+        ("s_ip", ctypes.c_uint32),
+        ("d_ip", ctypes.c_uint32),
+        ("data", ctypes.c_uint8*1480)
+    )
+
 ### Packet field access ###
 
 def SMAC(packet):
@@ -37,11 +67,11 @@ def Payload(packet):
 
 ### Packet handler ###
 
-def printPacket(packet, now, type,message):
+def printPacket(packet, now, type,protocol,message,srcip,distip,s_port,d_port):
    # print(message, len(packet), "bytes  time:", now,
    #       "\n  SMAC:", SMAC(packet), " DMAC:", DMAC(packet),
    #       " Type:", EtherType(packet), "\n  Payload:", Payload(packet)) # !! Python 3 !!
-   print(message, "protocol:",type,len(packet), "bytes time:", now, \
+   print(message,type,protocol,len(packet), "bytes time:", now, "srcip:",srcip,"port:",s_port,"distip:",distip,"port:",d_port,\
        "\n  SMAC:", SMAC(packet), " DMAC:", DMAC(packet), " Type:", \
        EtherType(packet), "\n  Payload:", Payload(packet)) # !! Python 2 !!
 
@@ -81,17 +111,30 @@ def terminal():
          buffer = io.BytesIO(packet)
          buffer.readinto(etf)
          type = etf.type
-         print(type)
-         
+         payload=etf.payload
       except socket.error:
          pass
       else:
-         dmac = DMAC(packet)
-        # printPacket(packet, now,type, "Received:")
+         if type == IPv4:
+            buffer=io.BytesIO(payload)
+            ipv4=Ipv4Headr()
+            buffer.readinto(ipv4)
+            # 送信元IPアドレスを取得する。
+            src_ip = ipaddress.IPv4Address(ipv4.s_ip)
+            # 送信先IPアドレスを取得する。
+            dist_ip = ipaddress.IPv4Address(ipv4.d_ip)
+            # ipヘッダからプロトコルタイプを取得する
+            if ipv4.type == TCP:
+                buffer = io.BytesIO(ipv4.data)
+                tcpdata= TcpHeadr()
+                buffer.readinto(tcpdata)             
+                printPacket(packet, now,"IPv4", "TCP","Received:",src_ip,dist_ip,tcpdata.s_port,tcpdata.d_port)
 
+            dmac = DMAC(packet)
+            
       if not opts.receiveOnly:
          if now > lastTime + interval:
-          #  sendBytes = sock.send(sendPacket)
+            sendBytes = sock.send(sendPacket)
            # printPacket(sendPacket, now, "Sent:   ")
             lastTime = now
          else:
